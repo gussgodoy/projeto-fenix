@@ -46,7 +46,7 @@ def update_record_status(table_name, record_id, status_id):
         with conn.cursor() as cur:
             if table_name not in ['our_api_keys', 'ia_providers', 'ia_api_keys']:
                 return jsonify({"error": "Tabela inválida"}), 400
-            sql = f"UPDATE {table_name} SET status_id = %s WHERE id = %s"
+            sql = "UPDATE {} SET status_id = %s WHERE id = %s".format(table_name)
             cur.execute(sql, (status_id, record_id))
             conn.commit()
             return jsonify({"status": "success"}) if cur.rowcount > 0 else (jsonify({"error": "Registro não encontrado"}), 404)
