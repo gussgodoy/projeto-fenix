@@ -95,34 +95,24 @@ def delete_our_key(key_id):
     finally:
         conn.close()
 
-# --- REFAÇÃO DAS ROTAS DE IA ---
-
 @config_bp.route('/ia/providers', methods=['GET'])
 def get_providers_and_keys():
-    """ROTA CORRIGIDA: Usa lógica Python para aninhar os dados."""
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            # Passo 1: Buscar todos os provedores
             cur.execute("SELECT p.id, p.name, s.name as status_name, s.color as status_color FROM ia_providers p JOIN statuses s ON p.status_id = s.id ORDER BY p.name")
             providers = cur.fetchall()
-            
-            # Passo 2: Buscar todas as chaves de IA
             cur.execute("SELECT k.id, k.provider_id, k.key_name, k.api_key, s.name as status_name, s.color as status_color FROM ia_api_keys k JOIN statuses s ON k.status_id = s.id ORDER BY k.key_name")
             all_keys = cur.fetchall()
-
-            # Passo 3: Aninhar as chaves nos provedores usando Python
             for provider in providers:
                 provider['keys'] = [key for key in all_keys if key['provider_id'] == provider['id']]
                 for key in provider['keys']:
                     key['api_key'] = f"****{key['api_key'][-4:]}"
-            
             return jsonify(providers)
     finally:
         conn.close()
 
-# --- (O resto das rotas de IA para POST, PATCH e DELETE permanecem iguais) ---
-@config_-bp.route('/ia/providers', methods=['POST'])
+@config_bp.route('/ia/providers', methods=['POST'])
 def create_provider():
     name = request.get_json().get('name')
     conn = get_db_connection()
