@@ -1,30 +1,28 @@
-from flask import Flask
-from flask_cors import CORS
-from .db import get_db_connection
+# /my_app/__init__.py
 
-# Importa o nosso novo blueprint unificado de configurações
+from flask import Flask
+from .db import get_db_connection
 from .routes.config_routes import config_bp
+from .routes.dashboard import dashboard_bp
+# --- ADICIONE ESTA LINHA ---
+from .routes.escritorio_routes import escritorio_bp
 
 def create_app():
     app = Flask(__name__)
-    CORS(app, resources={r"/*": {"origins": "*"}})
 
     @app.route('/health')
     def health_check():
         try:
             conn = get_db_connection()
             conn.close()
-            db_status = "OK"
+            db_status = "ok"
         except Exception as e:
             db_status = f"error: {e}"
+        return jsonify(database_status=db_status)
 
-        return {
-            "app_version": "1.0.0",
-            "database_status": db_status,
-            "server_status": "OK"
-        }
-
-    # Registra o blueprint unificado na aplicação
     app.register_blueprint(config_bp)
+    app.register_blueprint(dashboard_bp)
+    # --- E ESTA TAMBÉM ---
+    app.register_blueprint(escritorio_bp)
 
     return app
