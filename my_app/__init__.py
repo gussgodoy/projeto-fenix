@@ -12,8 +12,6 @@ from .routes.agente_routes import agente_bp
 def create_app():
     app = Flask(__name__)
 
-    # Configura o CORS para permitir requisições da sua aplicação frontend
-    # para todas as rotas que começam com /api/
     CORS(app, resources={r"/api/*": {"origins": "https://www.fenix.dev.br"}})
 
     @app.route('/health')
@@ -26,7 +24,7 @@ def create_app():
             db_status = f"error: {e}"
         return jsonify(database_status=db_status)
 
-    # Registra todos os blueprints (módulos da API)
+    # Registra TODOS os blueprints (módulos da API)
     app.register_blueprint(config_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(escritorio_bp)
