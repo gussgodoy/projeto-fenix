@@ -40,6 +40,23 @@ def delete_status(status_id):
     finally:
         conn.close()
 
+@config_bp.route('/statuses/<int:status_id>', methods=['PATCH'])
+def update_status(status_id):
+    """NOVO: Edita um status existente."""
+    data = request.get_json()
+    name, color = data.get('name'), data.get('color')
+    if not all([name, color]):
+        return jsonify({"error": "Nome e cor são obrigatórios"}), 400
+    
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE statuses SET name = %s, color = %s WHERE id = %s", (name, color, status_id))
+            conn.commit()
+            return jsonify({"status": "success"}) if cur.rowcount > 0 else (jsonify({"error": "Status não encontrado"}), 404)
+    finally:
+        conn.close()
+
 # --- FUNÇÃO GENÉRICA DE UPDATE DE STATUS ---
 def update_record_status(table_name, record_id, status_id):
     conn = get_db_connection()
