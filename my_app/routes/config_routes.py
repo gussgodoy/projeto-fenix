@@ -76,7 +76,7 @@ def handle_our_keys():
     try:
         with conn.cursor() as cur:
             if request.method == 'GET':
-                sql = "SELECT k.id, k.service_name, k.api_key, k.status_id, s.name as status_name, s.color as status_color FROM our_api_keys k JOIN statuses s ON k.status_id = s.id ORDER BY k.service_name"
+                sql = "SELECT k.id, k.service_name, k.api_key, k.status_id, s.name as status_color FROM our_api_keys k JOIN statuses s ON k.status_id = s.id ORDER BY k.service_name"
                 cur.execute(sql)
                 keys = cur.fetchall()
                 for key in keys: key['api_key'] = f"****{key['api_key'][-4:]}"
@@ -183,6 +183,78 @@ def delete_ia_key(key_id):
             cur.execute("DELETE FROM ia_api_keys WHERE id = %s", (key_id,))
             conn.commit()
             return jsonify({"status": "success"}) if cur.rowcount > 0 else (jsonify({"error": "Chave não encontrada"}), 404)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn: conn.close()
+
+# --- ROTAS PARA PERFIS DE AGENTES ---
+
+@config_bp.route('/perfis', methods=['GET'])
+def get_perfis():
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, nome, config_avancada FROM perfis ORDER BY nome ASC")
+            perfis = cur.fetchall()
+            for perfil in perfis:
+                if isinstance(perfil.get('config_avancada'), str):
+                    try:
+                        perfil['config_avancada'] = json.loads(perfil['config_avancada'])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            return jsonify(perfis)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn: conn.close()
+
+@config_bp.route('/perfis', methods=['POST'])
+def create_perfil():
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            data = request.get_json()
+            nome = data.get('nome')
+            config = data.get('config_avancada')
+            if not nome:
+                return jsonify({"error": "O nome é obrigatório"}), 400
+            config_str = json.dumps(config) if config else None
+            cur.execute("INSERT INTO perfis (nome, config_avancada) VALUES (%s, %s)", (nome, config_str))
+            conn.commit()
+            return jsonify({"status": "success", "id": cur.lastrowid}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn: conn.close()
+
+@config_bp.route('/perfis/<int:perfil_id>', methods=['PATCH'])
+def update_perfil(perfil_id):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            data = request.get_json()
+            nome = data.get('nome')
+            config = data.get('config_avancada')
+            if not nome:
+                return jsonify({"error": "O nome é obrigatório"}), 400
+            config_str = json.dumps(config) if config else None
+            cur.execute("UPDATE perfis SET nome = %s, config_avancada = %s WHERE id = %s", (nome, config_str, perfil_id))
+            conn.commit()
+            return jsonify({"status": "success"}) if cur.rowcount > 0 else (jsonify({"error": "Perfil não encontrado"}), 404)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn: conn.close()
+
+@config_bp.route('/perfis/<int:perfil_id>', methods=['DELETE'])
+def delete_perfil(perfil_id):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM perfis WHERE id = %s", (perfil_id,))
+            conn.commit()
+            return jsonify({"status": "success"}) if cur.rowcount > 0 else (jsonify({"error": "Perfil não encontrado"}), 404)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
