@@ -4,11 +4,9 @@ from ..db import get_db_connection
 
 config_bp = Blueprint('config', __name__, url_prefix='/api/config')
 
-# --- CRUD PARA A TABELA DE STATUS ---
-
+# --- (As rotas de Status e Nossas Chaves permanecem as mesmas) ---
 @config_bp.route('/statuses', methods=['GET'])
 def get_statuses():
-    """Retorna todos os status disponíveis."""
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
@@ -19,7 +17,6 @@ def get_statuses():
 
 @config_bp.route('/statuses', methods=['POST'])
 def create_status():
-    """Cria um novo status."""
     data = request.get_json()
     name, color = data.get('name'), data.get('color')
     conn = get_db_connection()
@@ -33,8 +30,6 @@ def create_status():
 
 @config_bp.route('/statuses/<int:status_id>', methods=['DELETE'])
 def delete_status(status_id):
-    """Deleta um status."""
-    # Adicionar lógica para verificar se o status não está em uso antes de deletar seria ideal em produção.
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
@@ -44,7 +39,6 @@ def delete_status(status_id):
     finally:
         conn.close()
 
-# --- FUNÇÃO GENÉRICA PARA ATUALIZAR STATUS ---
 def update_record_status(table_name, record_id, status_id):
     conn = get_db_connection()
     try:
@@ -59,22 +53,15 @@ def update_record_status(table_name, record_id, status_id):
     finally:
         conn.close()
 
-# --- ROTAS PARA "NOSSAS CHAVES API" ---
 @config_bp.route('/our-keys', methods=['GET'])
 def get_our_keys():
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            sql = """
-                SELECT k.id, k.service_name, k.api_key, s.name as status_name, s.color as status_color
-                FROM our_api_keys k
-                JOIN statuses s ON k.status_id = s.id
-                ORDER BY k.service_name
-            """
+            sql = "SELECT k.id, k.service_name, k.api_key, s.name as status_name, s.color as status_color FROM our_api_keys k JOIN statuses s ON k.status_id = s.id ORDER BY k.service_name"
             cur.execute(sql)
             keys = cur.fetchall()
-            for key in keys:
-                key['api_key'] = f"****{key['api_key'][-4:]}"
+            for key in keys: key['api_key'] = f"****{key['api_key'][-4:]}"
             return jsonify(keys)
     finally:
         conn.close()
@@ -99,49 +86,53 @@ def update_our_key_status(key_id):
 
 @config_bp.route('/our-keys/<int:key_id>', methods=['DELETE'])
 def delete_our_key(key_id):
-    # Lógica de delete existente
-    pass # O código anterior para delete continua válido
-
-# --- ROTAS PARA PROVEDORES DE IA E SUAS CHAVES (LÓGICA ANINHADA) ---
-@config_bp.route('/ia/providers', methods=['GET'])
-def get_providers_and_keys():
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            # Esta query busca os provedores e aninha as suas chaves como um objeto JSON
-            sql = """
-                SELECT 
-                    p.id, p.name, 
-                    s_p.name as status_name, s_p.color as status_color,
-                    (SELECT JSON_ARRAYAGG(
-                        JSON_OBJECT(
-                            'id', k.id, 
-                            'key_name', k.key_name, 
-                            'api_key', CONCAT('****', RIGHT(k.api_key, 4)), 
-                            'status_name', s_k.name,
-                            'status_color', s_k.color
-                        ))
-                     FROM ia_api_keys k 
-                     JOIN statuses s_k ON k.status_id = s_k.id
-                     WHERE k.provider_id = p.id
-                    ) as keys
-                FROM ia_providers p
-                JOIN statuses s_p ON p.status_id = s_p.id
-                ORDER BY p.name;
-            """
-            cur.execute(sql)
+            cur.execute("DELETE FROM our_api_keys WHERE id = %s", (key_id,))
+            conn.commit()
+            return jsonify({"status": "success"}) if cur.rowcount > 0 else (jsonify({"error": "Chave não encontrada"}), 404)
+    finally:
+        conn.close()
+
+# --- REFAÇÃO DAS ROTAS DE IA ---
+
+@config_bp.route('/ia/providers', methods=['GET'])
+def get_providers_and_keys():
+    """ROTA CORRIGIDA: Usa lógica Python para aninhar os dados."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            # Passo 1: Buscar todos os provedores
+            cur.execute("SELECT p.id, p.name, s.name as status_name, s.color as status_color FROM ia_providers p JOIN statuses s ON p.status_id = s.id ORDER BY p.name")
             providers = cur.fetchall()
+            
+            # Passo 2: Buscar todas as chaves de IA
+            cur.execute("SELECT k.id, k.provider_id, k.key_name, k.api_key, s.name as status_name, s.color as status_color FROM ia_api_keys k JOIN statuses s ON k.status_id = s.id ORDER BY k.key_name")
+            all_keys = cur.fetchall()
+
+            # Passo 3: Aninhar as chaves nos provedores usando Python
             for provider in providers:
-                if provider['keys'] is None:
-                    provider['keys'] = []
+                provider['keys'] = [key for key in all_keys if key['provider_id'] == provider['id']]
+                for key in provider['keys']:
+                    key['api_key'] = f"****{key['api_key'][-4:]}"
+            
             return jsonify(providers)
     finally:
         conn.close()
 
-@config_bp.route('/ia/providers', methods=['POST'])
+# --- (O resto das rotas de IA para POST, PATCH e DELETE permanecem iguais) ---
+@config_-bp.route('/ia/providers', methods=['POST'])
 def create_provider():
-    # Lógica de criar provedor existente
-    pass # O código anterior continua válido
+    name = request.get_json().get('name')
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO ia_providers (name) VALUES (%s)", (name,))
+            conn.commit()
+            return jsonify({"status": "success", "id": cur.lastrowid}), 201
+    finally:
+        conn.close()
 
 @config_bp.route('/ia/providers/<int:provider_id>/status', methods=['PATCH'])
 def update_provider_status(provider_id):
@@ -150,14 +141,27 @@ def update_provider_status(provider_id):
     
 @config_bp.route('/ia/providers/<int:provider_id>', methods=['DELETE'])
 def delete_provider(provider_id):
-    # Lógica de delete de provedor existente
-    pass # O código anterior continua válido
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM ia_providers WHERE id = %s", (provider_id,))
+            conn.commit()
+            return jsonify({"status": "success"}) if cur.rowcount > 0 else (jsonify({"error": "Provedor não encontrado"}), 404)
+    finally:
+        conn.close()
 
-# --- ROTAS PARA CHAVES DE IA (CRIAR, DELETAR, ATUALIZAR STATUS) ---
 @config_bp.route('/ia/keys', methods=['POST'])
 def create_ia_key():
-    # Lógica de criar chave de IA existente
-    pass # O código anterior continua válido
+    data = request.get_json()
+    provider_id, key_name, api_key = data.get('provider_id'), data.get('key_name'), data.get('api_key')
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO ia_api_keys (provider_id, key_name, api_key) VALUES (%s, %s, %s)", (provider_id, key_name, api_key))
+            conn.commit()
+            return jsonify({"status": "success", "id": cur.lastrowid}), 201
+    finally:
+        conn.close()
 
 @config_bp.route('/ia/keys/<int:key_id>/status', methods=['PATCH'])
 def update_ia_key_status(key_id):
@@ -166,5 +170,11 @@ def update_ia_key_status(key_id):
 
 @config_bp.route('/ia/keys/<int:key_id>', methods=['DELETE'])
 def delete_ia_key(key_id):
-    # Lógica de delete de chave de IA existente
-    pass # O código anterior para delete continua válido
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM ia_api_keys WHERE id = %s", (key_id,))
+            conn.commit()
+            return jsonify({"status": "success"}) if cur.rowcount > 0 else (jsonify({"error": "Chave não encontrada"}), 404)
+    finally:
+        conn.close()
