@@ -5,12 +5,16 @@ from ..db import get_db_connection
 
 config_bp = Blueprint('config', __name__, url_prefix='/api/config')
 
+@config_bp.route('/health', methods=['GET'])
+def health_check():
+    return jsonify(status="ok", module="Configurações"), 200
+
 # --- ROTAS DE STATUS ---
 @config_bp.route('/statuses', methods=['GET', 'POST'])
 def handle_statuses():
     conn = get_db_connection()
     try:
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor()
         if request.method == 'GET':
             cursor.execute("SELECT id, name, color FROM statuses ORDER BY id")
             return jsonify(cursor.fetchall())
@@ -31,7 +35,7 @@ def handle_statuses():
 def handle_status_by_id(status_id):
     conn = get_db_connection()
     try:
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor()
         if request.method == 'DELETE':
             cursor.execute("DELETE FROM statuses WHERE id = %s", (status_id,))
             conn.commit()
@@ -73,7 +77,7 @@ def update_record_status(table_name, record_id, status_id):
 def handle_our_keys():
     conn = get_db_connection()
     try:
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor()
         if request.method == 'GET':
             sql = "SELECT k.id, k.service_name, k.api_key, k.status_id, s.name as status_name, s.color as status_color FROM our_api_keys k JOIN statuses s ON k.status_id = s.id ORDER BY k.service_name"
             cursor.execute(sql)
@@ -115,7 +119,7 @@ def delete_our_key(key_id):
 def handle_ia_providers():
     conn = get_db_connection()
     try:
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor()
         if request.method == 'GET':
             cursor.execute("SELECT p.id, p.name, p.status_id, s.name as status_name, s.color as status_color FROM ia_providers p JOIN statuses s ON p.status_id = s.id ORDER BY p.name")
             providers = cursor.fetchall()
@@ -196,7 +200,7 @@ def delete_ia_key(key_id):
 def get_perfis():
     conn = get_db_connection()
     try:
-        with conn.cursor(dictionary=True) as cur:
+        with conn.cursor() as cur:
             cur.execute("SELECT id, nome, config_avancada FROM perfis ORDER BY nome ASC")
             perfis = cur.fetchall()
             for perfil in perfis:
@@ -261,12 +265,3 @@ def delete_perfil(perfil_id):
         return jsonify({"error": str(e)}), 500
     finally:
         if conn: conn.close()
-
-# /my_app/routes/config_routes.py
-
-# ... (todo o código existente do config_routes.py fica aqui em cima)
-
-@config_bp.route('/health', methods=['GET'])
-def health_check():
-    # A lógica pode ser expandida para verificar dependências específicas deste módulo
-    return jsonify(status="ok", module="Configurações"), 200
