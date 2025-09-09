@@ -1,6 +1,6 @@
 # /my_app/__init__.py
 
-from flask import Flask, jsonify  # CORREÇÃO APLICADA AQUI
+from flask import Flask, jsonify
 from flask_cors import CORS
 from .db import get_db_connection
 from .routes.config_routes import config_bp
@@ -12,8 +12,8 @@ from .routes.agente_routes import agente_bp
 def create_app():
     app = Flask(__name__)
 
-    # Permitir CORS a partir de qualquer origem para a API
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    # CORREÇÃO APLICADA AQUI: Aplica a política de CORS a todas as rotas para a origem específica.
+    CORS(app, resources={r"/*": {"origins": "https://www.fenix.dev.br"}})
 
     @app.route('/health')
     def health_check():
