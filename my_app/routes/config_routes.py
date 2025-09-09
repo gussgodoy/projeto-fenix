@@ -1,3 +1,4 @@
+# Versão final verificada
 import secrets
 from flask import Blueprint, request, jsonify
 from ..db import get_db_connection
