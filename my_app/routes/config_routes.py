@@ -1,4 +1,5 @@
-# Versão final verificada
+# /my_app/routes/config_routes.py
+
 import secrets
 from flask import Blueprint, request, jsonify
 from ..db import get_db_connection
@@ -42,7 +43,6 @@ def delete_status(status_id):
 
 @config_bp.route('/statuses/<int:status_id>', methods=['PATCH'])
 def update_status(status_id):
-    """NOVO: Edita um status existente."""
     data = request.get_json()
     name, color = data.get('name'), data.get('color')
     if not all([name, color]):
@@ -64,7 +64,8 @@ def update_record_status(table_name, record_id, status_id):
         with conn.cursor() as cur:
             if table_name not in ['our_api_keys', 'ia_providers', 'ia_api_keys']:
                 return jsonify({"error": "Tabela inválida"}), 400
-            sql = "UPDATE {} SET status_id = %s WHERE id = %s".format(table_name)
+            # Usando placeholders para segurança
+            sql = f"UPDATE {table_name} SET status_id = %s WHERE id = %s"
             cur.execute(sql, (status_id, record_id))
             conn.commit()
             return jsonify({"status": "success"}) if cur.rowcount > 0 else (jsonify({"error": "Registro não encontrado"}), 404)
@@ -77,7 +78,8 @@ def get_our_keys():
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            sql = "SELECT k.id, k.service_name, k.api_key, s.name as status_name, s.color as status_color FROM our_api_keys k JOIN statuses s ON k.status_id = s.id ORDER BY k.service_name"
+            # CORREÇÃO 1: Adicionado k.status_id ao SELECT
+            sql = "SELECT k.id, k.service_name, k.api_key, k.status_id, s.name as status_name, s.color as status_color FROM our_api_keys k JOIN statuses s ON k.status_id = s.id ORDER BY k.service_name"
             cur.execute(sql)
             keys = cur.fetchall()
             for key in keys: key['api_key'] = f"****{key['api_key'][-4:]}"
@@ -92,6 +94,7 @@ def create_our_key():
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
+            # O status_id é definido por DEFAULT 1 no DB, o que é correto.
             cur.execute("INSERT INTO our_api_keys (service_name, api_key) VALUES (%s, %s)", (service_name, api_key))
             conn.commit()
             return jsonify({"status": "success", "id": cur.lastrowid, "api_key": api_key}), 201
@@ -99,7 +102,7 @@ def create_our_key():
         conn.close()
 
 @config_bp.route('/our-keys/<int:key_id>/status', methods=['PATCH'])
-def update_our_key_status(key_id):
+def update_our_key_status_route(key_id):
     status_id = request.get_json().get('status_id')
     return update_record_status('our_api_keys', key_id, status_id)
 
@@ -120,9 +123,11 @@ def get_providers_and_keys():
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT p.id, p.name, s.name as status_name, s.color as status_color FROM ia_providers p JOIN statuses s ON p.status_id = s.id ORDER BY p.name")
+            # CORREÇÃO 2: Adicionado p.status_id ao SELECT
+            cur.execute("SELECT p.id, p.name, p.status_id, s.name as status_name, s.color as status_color FROM ia_providers p JOIN statuses s ON p.status_id = s.id ORDER BY p.name")
             providers = cur.fetchall()
-            cur.execute("SELECT k.id, k.provider_id, k.key_name, k.api_key, s.name as status_name, s.color as status_color FROM ia_api_keys k JOIN statuses s ON k.status_id = s.id ORDER BY k.key_name")
+            # CORREÇÃO 3: Adicionado k.status_id ao SELECT
+            cur.execute("SELECT k.id, k.provider_id, k.key_name, k.api_key, k.status_id, s.name as status_name, s.color as status_color FROM ia_api_keys k JOIN statuses s ON k.status_id = s.id ORDER BY k.key_name")
             all_keys = cur.fetchall()
             for provider in providers:
                 provider['keys'] = [key for key in all_keys if key['provider_id'] == provider['id']]
@@ -145,7 +150,7 @@ def create_provider():
         conn.close()
 
 @config_bp.route('/ia/providers/<int:provider_id>/status', methods=['PATCH'])
-def update_provider_status(provider_id):
+def update_provider_status_route(provider_id):
     status_id = request.get_json().get('status_id')
     return update_record_status('ia_providers', provider_id, status_id)
     
@@ -154,6 +159,8 @@ def delete_provider(provider_id):
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
+            # Deletar chaves associadas primeiro para evitar erro de chave estrangeira
+            cur.execute("DELETE FROM ia_api_keys WHERE provider_id = %s", (provider_id,))
             cur.execute("DELETE FROM ia_providers WHERE id = %s", (provider_id,))
             conn.commit()
             return jsonify({"status": "success"}) if cur.rowcount > 0 else (jsonify({"error": "Provedor não encontrado"}), 404)
@@ -174,7 +181,7 @@ def create_ia_key():
         conn.close()
 
 @config_bp.route('/ia/keys/<int:key_id>/status', methods=['PATCH'])
-def update_ia_key_status(key_id):
+def update_ia_key_status_route(key_id):
     status_id = request.get_json().get('status_id')
     return update_record_status('ia_api_keys', key_id, status_id)
 
