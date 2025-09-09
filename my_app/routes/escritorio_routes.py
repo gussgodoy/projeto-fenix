@@ -5,7 +5,31 @@ from ..db import get_db_connection
 
 escritorio_bp = Blueprint('escritorio', __name__, url_prefix='/api/escritorio')
 
-# --- ROTAS DE CLIENTES ---
+# --- ROTA DE CONFIGURAÇÃO ---
+@escritorio_bp.route('/config', methods=['GET'])
+def get_escritorio_config():
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # Captadores e Indicadores são clientes com status "Ativo" (id=1)
+            cur.execute("SELECT id, nome FROM clientes WHERE status_id = 1 ORDER BY nome")
+            clientes_ativos = cur.fetchall()
+            
+            # Statuses
+            cur.execute("SELECT id, name, color FROM statuses ORDER BY id")
+            statuses = cur.fetchall()
+            
+            return jsonify({
+                "clientes_ativos": clientes_ativos,
+                "statuses": statuses
+            })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn: conn.close()
+
+# --- ROTAS DE CLIENTES (CRUD) ---
 
 @escritorio_bp.route('/clientes', methods=['GET'])
 def get_clientes():
@@ -13,20 +37,16 @@ def get_clientes():
     try:
         conn = get_db_connection()
         with conn.cursor() as cur:
-            # Seleciona todos os campos necessários para a exibição e o formulário
-            cur.execute("""
-                SELECT 
-                    c.*, 
-                    s.name as status_nome, 
-                    s.color as status_cor
+            sql = """
+                SELECT c.*, s.name as status_nome, s.color as status_cor
                 FROM clientes c
-                JOIN statuses s ON c.status_id = s.id
+                LEFT JOIN statuses s ON c.status_id = s.id
                 ORDER BY c.nome
-            """)
+            """
+            cur.execute(sql)
             clientes = cur.fetchall()
             return jsonify(clientes)
     except Exception as e:
-        print(f"Erro em get_clientes: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         if conn: conn.close()
@@ -34,33 +54,24 @@ def get_clientes():
 @escritorio_bp.route('/clientes', methods=['POST'])
 def create_cliente():
     data = request.get_json()
+    if not data or not data.get('nome'):
+        return jsonify({"error": "O nome do cliente é obrigatório"}), 400
+    
     conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cur:
-            # SQL dinâmico para inserir apenas os campos fornecidos
-            fields = [key for key in data if key in [
-                'nome', 'razao_social', 'cnpj', 'website', 'status_id', 
-                'contato_nome', 'contato_cargo', 'contato_telefone', 'contato_email', 
-                'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'estado',
-                'numero_contrato', 'valor_mensal', 'dia_de_vencimento', 
-                'captador_id', 'indicador_id'
-            ]]
-            
-            # Converte valores vazios para None (NULL no banco)
-            values = []
-            for field in fields:
-                value = data.get(field)
-                values.append(value if value != '' else None)
-
+            # Prepara os campos e valores para a inserção
+            fields = [key for key in data if key != 'id']
             placeholders = ', '.join(['%s'] * len(fields))
+            values = [data.get(field) or None for field in fields]
+
             sql = f"INSERT INTO clientes ({', '.join(fields)}) VALUES ({placeholders})"
             
             cur.execute(sql, tuple(values))
             conn.commit()
             return jsonify({"status": "success", "id": cur.lastrowid}), 201
     except Exception as e:
-        print(f"Erro em create_cliente: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         if conn: conn.close()
@@ -68,28 +79,24 @@ def create_cliente():
 @escritorio_bp.route('/clientes/<int:cliente_id>', methods=['PUT'])
 def update_cliente(cliente_id):
     data = request.get_json()
+    if not data:
+        return jsonify({"error": "Dados inválidos"}), 400
+
     conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cur:
             fields = [key for key in data if key != 'id']
-            
-            set_clauses = []
-            values = []
-            for field in fields:
-                value = data.get(field)
-                set_clauses.append(f"{field} = %s")
-                values.append(value if value != '' else None)
-            
-            values.append(cliente_id) # Adiciona o ID para a cláusula WHERE
-            
+            set_clauses = [f"{field} = %s" for field in fields]
+            values = [data.get(field) or None for field in fields]
+            values.append(cliente_id)
+
             sql = f"UPDATE clientes SET {', '.join(set_clauses)} WHERE id = %s"
             
             cur.execute(sql, tuple(values))
             conn.commit()
             return jsonify({"status": "success"}) if cur.rowcount > 0 else (jsonify({"error": "Cliente não encontrado"}), 404)
     except Exception as e:
-        print(f"Erro em update_cliente: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         if conn: conn.close()
@@ -104,19 +111,6 @@ def delete_cliente(cliente_id):
             conn.commit()
             return jsonify({"status": "success"}) if cur.rowcount > 0 else (jsonify({"error": "Cliente não encontrado"}), 404)
     except Exception as e:
-        print(f"Erro em delete_cliente: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         if conn: conn.close()
-
-# /my_app/routes/escritorio_routes.py
-
-from flask import Blueprint, jsonify
-
-escritorio_bp = Blueprint('escritorio_bp', __name__, url_prefix='/api/escritorio')
-
-@escritorio_bp.route('/health', methods=['GET'])
-def health_check():
-    return jsonify(status="ok", module="Escritório"), 200
-
-# ... (o resto do seu código para este módulo continua aqui)
