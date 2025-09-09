@@ -1,0 +1,22 @@
+# ===================================================
+# Dependências do Projeto Fênix
+# Versões travadas para garantir a reprodutibilidade
+# ===================================================
+
+# Framework Web
+Flask==3.0.3
+
+# Suporte a CORS (Cross-Origin Resource Sharing)
+Flask-Cors==4.0.1
+
+# Conector para o banco de dados MySQL
+PyMySQL==1.1.0
+
+# SDK para a API do Google Gemini
+google-generativeai==0.7.1
+
+# Gerenciamento de variáveis de ambiente (arquivos .env)
+python-dotenv==1.0.1
+
+# ... (outras dependências) ...
+requests==2.32.3
