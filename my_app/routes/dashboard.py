@@ -96,3 +96,15 @@ def send_human_message(convo_id):
         return jsonify({"error": f"Erro ao enviar mensagem: {str(e)}"}), 500
     finally:
         if conn: conn.close()
+
+# /my_app/routes/dashboard.py
+
+from flask import Blueprint, jsonify
+
+dashboard_bp = Blueprint('dashboard_bp', __name__, url_prefix='/api/dashboard')
+
+@dashboard_bp.route('/health', methods=['GET'])
+def health_check():
+    return jsonify(status="ok", module="Dashboard"), 200
+
+# ... (o resto do seu código para este módulo continua aqui)        

@@ -185,3 +185,15 @@ def delete_template(template_id):
         return jsonify({"error": str(e)}), 500
     finally:
         if conn: conn.close()
+
+# /my_app/routes/knowledge_routes.py
+
+from flask import Blueprint, jsonify
+
+knowledge_bp = Blueprint('knowledge_bp', __name__, url_prefix='/api/knowledge')
+
+@knowledge_bp.route('/health', methods=['GET'])
+def health_check():
+    return jsonify(status="ok", module="Conhecimento"), 200
+
+# ... (o resto do seu código para este módulo continua aqui)

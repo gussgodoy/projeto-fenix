@@ -123,3 +123,15 @@ def delete_agente(agente_id):
         return jsonify({"error": str(e)}), 500
     finally:
         if conn: conn.close()
+
+# /my_app/routes/agente_routes.py
+
+from flask import Blueprint, jsonify
+
+agente_bp = Blueprint('agente_bp', __name__, url_prefix='/api/agente')
+
+@agente_bp.route('/health', methods=['GET'])
+def health_check():
+    return jsonify(status="ok", module="Agente"), 200
+
+# ... (o resto do seu código para este módulo continua aqui)

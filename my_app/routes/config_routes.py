@@ -261,3 +261,12 @@ def delete_perfil(perfil_id):
         return jsonify({"error": str(e)}), 500
     finally:
         if conn: conn.close()
+
+# /my_app/routes/config_routes.py
+
+# ... (todo o código existente do config_routes.py fica aqui em cima)
+
+@config_bp.route('/health', methods=['GET'])
+def health_check():
+    # A lógica pode ser expandida para verificar dependências específicas deste módulo
+    return jsonify(status="ok", module="Configurações"), 200

@@ -108,3 +108,15 @@ def delete_cliente(cliente_id):
         return jsonify({"error": str(e)}), 500
     finally:
         if conn: conn.close()
+
+# /my_app/routes/escritorio_routes.py
+
+from flask import Blueprint, jsonify
+
+escritorio_bp = Blueprint('escritorio_bp', __name__, url_prefix='/api/escritorio')
+
+@escritorio_bp.route('/health', methods=['GET'])
+def health_check():
+    return jsonify(status="ok", module="Escritório"), 200
+
+# ... (o resto do seu código para este módulo continua aqui)
