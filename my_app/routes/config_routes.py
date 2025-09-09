@@ -4,7 +4,7 @@ from ..db import get_db_connection
 
 config_bp = Blueprint('config', __name__, url_prefix='/api/config')
 
-# --- (As rotas de Status e Nossas Chaves permanecem as mesmas) ---
+# --- ROTAS DE STATUS ---
 @config_bp.route('/statuses', methods=['GET'])
 def get_statuses():
     conn = get_db_connection()
@@ -39,13 +39,13 @@ def delete_status(status_id):
     finally:
         conn.close()
 
+# --- FUNÇÃO GENÉRICA DE UPDATE DE STATUS ---
 def update_record_status(table_name, record_id, status_id):
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             if table_name not in ['our_api_keys', 'ia_providers', 'ia_api_keys']:
                 return jsonify({"error": "Tabela inválida"}), 400
-            
             sql = f"UPDATE {table_name} SET status_id = %s WHERE id = %s"
             cur.execute(sql, (status_id, record_id))
             conn.commit()
@@ -53,6 +53,7 @@ def update_record_status(table_name, record_id, status_id):
     finally:
         conn.close()
 
+# --- ROTAS "NOSSAS CHAVES API" ---
 @config_bp.route('/our-keys', methods=['GET'])
 def get_our_keys():
     conn = get_db_connection()
@@ -95,6 +96,7 @@ def delete_our_key(key_id):
     finally:
         conn.close()
 
+# --- ROTAS DE IA ---
 @config_bp.route('/ia/providers', methods=['GET'])
 def get_providers_and_keys():
     conn = get_db_connection()
