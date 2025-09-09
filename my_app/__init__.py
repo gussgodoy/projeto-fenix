@@ -1,6 +1,6 @@
 # /my_app/__init__.py
 
-from flask import Flask
+from flask import Flask, jsonify  # CORREÇÃO APLICADA AQUI
 from flask_cors import CORS
 from .db import get_db_connection
 from .routes.config_routes import config_bp
@@ -12,17 +12,19 @@ from .routes.agente_routes import agente_bp
 def create_app():
     app = Flask(__name__)
 
-    CORS(app, resources={r"/api/*": {"origins": "https://www.fenix.dev.br"}})
+    # Permitir CORS a partir de qualquer origem para a API
+    CORS(app, resources={r"/api/*": {"origins": "*"}})
 
     @app.route('/health')
     def health_check():
+        db_status = "ok"
         try:
             conn = get_db_connection()
             conn.close()
-            db_status = "ok"
         except Exception as e:
             db_status = f"error: {e}"
-        return jsonify(database_status=db_status)
+        
+        return jsonify(database_status=db_status, server_status="OK")
 
     # Registra TODOS os blueprints (módulos da API)
     app.register_blueprint(config_bp)
