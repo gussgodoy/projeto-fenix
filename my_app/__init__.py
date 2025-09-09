@@ -1,19 +1,17 @@
 # /my_app/__init__.py
 
 from flask import Flask
-from flask_cors import CORS  # --- ADICIONE ESTA LINHA ---
+from flask_cors import CORS
 from .db import get_db_connection
 from .routes.config_routes import config_bp
 from .routes.dashboard import dashboard_bp
 from .routes.escritorio_routes import escritorio_bp
+# --- ADICIONE ESTA LINHA ---
+from .routes.knowledge_routes import knowledge_bp
 
 def create_app():
     app = Flask(__name__)
-
-    # --- CONFIGURAÇÃO DE CORS ADICIONADA ---
-    # Permite que o frontend em 'https://www.fenix.dev.br' acesse todas as rotas da API.
     CORS(app, resources={r"/api/*": {"origins": "https://www.fenix.dev.br"}})
-    # -------------------------------------
 
     @app.route('/health')
     def health_check():
@@ -28,5 +26,7 @@ def create_app():
     app.register_blueprint(config_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(escritorio_bp)
+    # --- E ESTA TAMBÉM ---
+    app.register_blueprint(knowledge_bp)
 
     return app
