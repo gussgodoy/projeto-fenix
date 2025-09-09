@@ -6,11 +6,14 @@ from .db import get_db_connection
 from .routes.config_routes import config_bp
 from .routes.dashboard import dashboard_bp
 from .routes.escritorio_routes import escritorio_bp
-# --- ADICIONE ESTA LINHA ---
 from .routes.knowledge_routes import knowledge_bp
+from .routes.agente_routes import agente_bp
 
 def create_app():
     app = Flask(__name__)
+
+    # Configura o CORS para permitir requisições da sua aplicação frontend
+    # para todas as rotas que começam com /api/
     CORS(app, resources={r"/api/*": {"origins": "https://www.fenix.dev.br"}})
 
     @app.route('/health')
@@ -23,10 +26,11 @@ def create_app():
             db_status = f"error: {e}"
         return jsonify(database_status=db_status)
 
+    # Registra todos os blueprints (módulos da API)
     app.register_blueprint(config_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(escritorio_bp)
-    # --- E ESTA TAMBÉM ---
     app.register_blueprint(knowledge_bp)
+    app.register_blueprint(agente_bp)
 
     return app
