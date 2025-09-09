@@ -1,76 +1,53 @@
 import secrets
+import json
 from flask import Blueprint, request, jsonify
 from ..db import get_db_connection
 
 config_bp = Blueprint('config', __name__, url_prefix='/api/config')
 
 # --- ROTAS DE STATUS ---
-@config_bp.route('/statuses', methods=['GET'])
-def get_statuses():
+@config_bp.route('/statuses', methods=['GET', 'POST'])
+def handle_statuses():
     conn = get_db_connection()
     try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT id, name, color FROM statuses ORDER BY id")
-            return jsonify(cur.fetchall())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    finally:
-        conn.close()
-
-@config_bp.route('/statuses', methods=['POST'])
-def create_status():
-    data = request.get_json()
-    name, color = data.get('name'), data.get('color')
-    if not all([name, color]):
-        return jsonify({"error": "Nome e cor são obrigatórios"}), 400
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("INSERT INTO statuses (name, color) VALUES (%s, %s)", (name, color))
+        cursor = conn.cursor(dictionary=True)
+        if request.method == 'GET':
+            cursor.execute("SELECT id, name, color FROM statuses ORDER BY id")
+            return jsonify(cursor.fetchall())
+        elif request.method == 'POST':
+            data = request.get_json()
+            name, color = data.get('name'), data.get('color')
+            if not all([name, color]):
+                return jsonify({"error": "Nome e cor são obrigatórios"}), 400
+            cursor.execute("INSERT INTO statuses (name, color) VALUES (%s, %s)", (name, color))
             conn.commit()
-            return jsonify({"status": "success", "id": cur.lastrowid, "name": name, "color": color}), 201
+            return jsonify({"status": "success", "id": cursor.lastrowid}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
-        conn.close()
+        if conn: conn.close()
 
-@config_bp.route('/statuses/<int:status_id>', methods=['DELETE'])
-def delete_status(status_id):
+@config_bp.route('/statuses/<int:status_id>', methods=['DELETE', 'PATCH'])
+def handle_status_by_id(status_id):
     conn = get_db_connection()
     try:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM statuses WHERE id = %s", (status_id,))
+        cursor = conn.cursor(dictionary=True)
+        if request.method == 'DELETE':
+            cursor.execute("DELETE FROM statuses WHERE id = %s", (status_id,))
             conn.commit()
-            if cur.rowcount > 0:
-                return jsonify({"status": "success", "id": status_id})
-            else:
-                return jsonify({"error": "Status não encontrado"}), 404
+            return jsonify({"status": "success"}) if cursor.rowcount > 0 else (jsonify({"error": "Status não encontrado"}), 404)
+        elif request.method == 'PATCH':
+            data = request.get_json()
+            name, color = data.get('name'), data.get('color')
+            if not all([name, color]):
+                return jsonify({"error": "Nome e cor são obrigatórios"}), 400
+            cursor.execute("UPDATE statuses SET name = %s, color = %s WHERE id = %s", (name, color, status_id))
+            conn.commit()
+            return jsonify({"status": "success"}) if cursor.rowcount > 0 else (jsonify({"error": "Status não encontrado"}), 404)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
-        conn.close()
-
-@config_bp.route('/statuses/<int:status_id>', methods=['PATCH'])
-def update_status(status_id):
-    data = request.get_json()
-    name, color = data.get('name'), data.get('color')
-    if not all([name, color]):
-        return jsonify({"error": "Nome e cor são obrigatórios"}), 400
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("UPDATE statuses SET name = %s, color = %s WHERE id = %s", (name, color, status_id))
-            conn.commit()
-            if cur.rowcount > 0:
-                cur.execute("SELECT id, name, color FROM statuses WHERE id = %s", (status_id,))
-                updated = cur.fetchone()
-                return jsonify({"status": "success", "updated": updated})
-            else:
-                return jsonify({"error": "Status não encontrado"}), 404
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    finally:
-        conn.close()
+        if conn: conn.close()
 
 # --- FUNÇÃO GENÉRICA DE UPDATE DE STATUS ---
 def update_record_status(table_name, record_id, status_id):
@@ -83,46 +60,37 @@ def update_record_status(table_name, record_id, status_id):
             cur.execute(sql, (status_id, record_id))
             conn.commit()
             if cur.rowcount > 0:
-                cur.execute(f"SELECT * FROM {table_name} WHERE id = %s", (record_id,))
-                updated = cur.fetchone()
-                return jsonify({"status": "success", "updated": updated, "id": record_id})
+                return jsonify({"status": "success", "id": record_id})
             else:
                 return jsonify({"error": "Registro não encontrado"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
-        conn.close()
+        if conn: conn.close()
 
 # --- ROTAS "NOSSAS CHAVES API" ---
-@config_bp.route('/our-keys', methods=['GET'])
-def get_our_keys():
+@config_bp.route('/our-keys', methods=['GET', 'POST'])
+def handle_our_keys():
     conn = get_db_connection()
     try:
-        with conn.cursor() as cur:
+        cursor = conn.cursor(dictionary=True)
+        if request.method == 'GET':
             sql = "SELECT k.id, k.service_name, k.api_key, k.status_id, s.name as status_name, s.color as status_color FROM our_api_keys k JOIN statuses s ON k.status_id = s.id ORDER BY k.service_name"
-            cur.execute(sql)
-            keys = cur.fetchall()
+            cursor.execute(sql)
+            keys = cursor.fetchall()
             for key in keys: key['api_key'] = f"****{key['api_key'][-4:]}"
             return jsonify(keys)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    finally:
-        conn.close()
-
-@config_bp.route('/our-keys', methods=['POST'])
-def create_our_key():
-    service_name = request.get_json().get('service_name')
-    api_key = f"fenix_{secrets.token_urlsafe(32)}"
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("INSERT INTO our_api_keys (service_name, api_key) VALUES (%s, %s)", (service_name, api_key))
+        elif request.method == 'POST':
+            service_name = request.get_json().get('service_name')
+            api_key = f"fenix_{secrets.token_urlsafe(32)}"
+            cursor.execute("INSERT INTO our_api_keys (service_name, api_key) VALUES (%s, %s)", (service_name, api_key))
             conn.commit()
-            return jsonify({"status": "success", "id": cur.lastrowid, "api_key": api_key}), 201
+            return jsonify({"status": "success", "id": cursor.lastrowid, "api_key": api_key}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
-        conn.close()
+        if conn: conn.close()
+
 
 @config_bp.route('/our-keys/<int:key_id>/status', methods=['PATCH'])
 def update_our_key_status_route(key_id):
@@ -136,48 +104,38 @@ def delete_our_key(key_id):
         with conn.cursor() as cur:
             cur.execute("DELETE FROM our_api_keys WHERE id = %s", (key_id,))
             conn.commit()
-            if cur.rowcount > 0:
-                return jsonify({"status": "success", "id": key_id})
-            else:
-                return jsonify({"error": "Chave não encontrada"}), 404
+            return jsonify({"status": "success"}) if cur.rowcount > 0 else (jsonify({"error": "Chave não encontrada"}), 404)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
-        conn.close()
+        if conn: conn.close()
 
 # --- ROTAS DE IA ---
-@config_bp.route('/ia/providers', methods=['GET'])
-def get_providers_and_keys():
+@config_bp.route('/ia/providers', methods=['GET', 'POST'])
+def handle_ia_providers():
     conn = get_db_connection()
     try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT p.id, p.name, p.status_id, s.name as status_name, s.color as status_color FROM ia_providers p JOIN statuses s ON p.status_id = s.id ORDER BY p.name")
-            providers = cur.fetchall()
-            cur.execute("SELECT k.id, k.provider_id, k.key_name, k.api_key, k.status_id, s.name as status_name, s.color as status_color FROM ia_api_keys k JOIN statuses s ON k.status_id = s.id ORDER BY k.key_name")
-            all_keys = cur.fetchall()
+        cursor = conn.cursor(dictionary=True)
+        if request.method == 'GET':
+            cursor.execute("SELECT p.id, p.name, p.status_id, s.name as status_name, s.color as status_color FROM ia_providers p JOIN statuses s ON p.status_id = s.id ORDER BY p.name")
+            providers = cursor.fetchall()
+            cursor.execute("SELECT k.id, k.provider_id, k.key_name, k.api_key, k.status_id, s.name as status_name, s.color as status_color FROM ia_api_keys k JOIN statuses s ON k.status_id = s.id ORDER BY k.key_name")
+            all_keys = cursor.fetchall()
             for provider in providers:
                 provider['keys'] = [key for key in all_keys if key['provider_id'] == provider['id']]
                 for key in provider['keys']:
                     key['api_key'] = f"****{key['api_key'][-4:]}"
             return jsonify(providers)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    finally:
-        conn.close()
-
-@config_bp.route('/ia/providers', methods=['POST'])
-def create_provider():
-    name = request.get_json().get('name')
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("INSERT INTO ia_providers (name) VALUES (%s)", (name,))
+        elif request.method == 'POST':
+            name = request.get_json().get('name')
+            cursor.execute("INSERT INTO ia_providers (name) VALUES (%s)", (name,))
             conn.commit()
-            return jsonify({"status": "success", "id": cur.lastrowid}), 201
+            return jsonify({"status": "success", "id": cursor.lastrowid}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
-        conn.close()
+        if conn: conn.close()
+
 
 @config_bp.route('/ia/providers/<int:provider_id>/status', methods=['PATCH'])
 def update_provider_status_route(provider_id):
@@ -192,29 +150,27 @@ def delete_provider(provider_id):
             cur.execute("DELETE FROM ia_api_keys WHERE provider_id = %s", (provider_id,))
             cur.execute("DELETE FROM ia_providers WHERE id = %s", (provider_id,))
             conn.commit()
-            if cur.rowcount > 0:
-                return jsonify({"status": "success", "id": provider_id})
-            else:
-                return jsonify({"error": "Provedor não encontrado"}), 404
+            return jsonify({"status": "success"}) if cur.rowcount > 0 else (jsonify({"error": "Provedor não encontrado"}), 404)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
-        conn.close()
+        if conn: conn.close()
 
 @config_bp.route('/ia/keys', methods=['POST'])
 def create_ia_key():
-    data = request.get_json()
-    provider_id, key_name, api_key = data.get('provider_id'), data.get('key_name'), data.get('api_key')
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
+            data = request.get_json()
+            provider_id, key_name, api_key = data.get('provider_id'), data.get('key_name'), data.get('api_key')
             cur.execute("INSERT INTO ia_api_keys (provider_id, key_name, api_key) VALUES (%s, %s, %s)", (provider_id, key_name, api_key))
             conn.commit()
             return jsonify({"status": "success", "id": cur.lastrowid}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
-        conn.close()
+        if conn: conn.close()
+
 
 @config_bp.route('/ia/keys/<int:key_id>/status', methods=['PATCH'])
 def update_ia_key_status_route(key_id):
@@ -228,11 +184,80 @@ def delete_ia_key(key_id):
         with conn.cursor() as cur:
             cur.execute("DELETE FROM ia_api_keys WHERE id = %s", (key_id,))
             conn.commit()
-            if cur.rowcount > 0:
-                return jsonify({"status": "success", "id": key_id})
-            else:
-                return jsonify({"error": "Chave não encontrada"}), 404
+            return jsonify({"status": "success"}) if cur.rowcount > 0 else (jsonify({"error": "Chave não encontrada"}), 404)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
-        conn.close()
+        if conn: conn.close()
+
+# --- ROTAS PARA PERFIS DE AGENTES ---
+
+@config_bp.route('/perfis', methods=['GET'])
+def get_perfis():
+    conn = get_db_connection()
+    try:
+        with conn.cursor(dictionary=True) as cur:
+            cur.execute("SELECT id, nome, config_avancada FROM perfis ORDER BY nome ASC")
+            perfis = cur.fetchall()
+            for perfil in perfis:
+                if isinstance(perfil.get('config_avancada'), str):
+                    try:
+                        perfil['config_avancada'] = json.loads(perfil['config_avancada'])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            return jsonify(perfis)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn: conn.close()
+
+@config_bp.route('/perfis', methods=['POST'])
+def create_perfil():
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            data = request.get_json()
+            nome = data.get('nome')
+            config = data.get('config_avancada')
+            if not nome:
+                return jsonify({"error": "O nome é obrigatório"}), 400
+            config_str = json.dumps(config) if config else None
+            cur.execute("INSERT INTO perfis (nome, config_avancada) VALUES (%s, %s)", (nome, config_str))
+            conn.commit()
+            return jsonify({"status": "success", "id": cur.lastrowid}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn: conn.close()
+
+@config_bp.route('/perfis/<int:perfil_id>', methods=['PATCH'])
+def update_perfil(perfil_id):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            data = request.get_json()
+            nome = data.get('nome')
+            config = data.get('config_avancada')
+            if not nome:
+                return jsonify({"error": "O nome é obrigatório"}), 400
+            config_str = json.dumps(config) if config else None
+            cur.execute("UPDATE perfis SET nome = %s, config_avancada = %s WHERE id = %s", (nome, config_str, perfil_id))
+            conn.commit()
+            return jsonify({"status": "success"}) if cur.rowcount > 0 else (jsonify({"error": "Perfil não encontrado"}), 404)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn: conn.close()
+
+@config_bp.route('/perfis/<int:perfil_id>', methods=['DELETE'])
+def delete_perfil(perfil_id):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM perfis WHERE id = %s", (perfil_id,))
+            conn.commit()
+            return jsonify({"status": "success"}) if cur.rowcount > 0 else (jsonify({"error": "Perfil não encontrado"}), 404)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn: conn.close()
