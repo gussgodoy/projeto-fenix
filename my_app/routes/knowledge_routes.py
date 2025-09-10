@@ -12,7 +12,6 @@ def get_knowledge_config():
     try:
         conn = get_db_connection()
         with conn.cursor() as cur:
-            # Seleciona apenas clientes ativos para novos templates
             cur.execute("SELECT id, nome FROM clientes WHERE status_id = 1 ORDER BY nome")
             clientes = cur.fetchall()
             return jsonify({"clientes": clientes})
@@ -61,7 +60,6 @@ def create_template():
             )
             conn.commit()
             new_id = cur.lastrowid
-            # Retorna o objeto recém-criado para o frontend
             cur.execute("SELECT t.id, t.name, t.cliente_id, c.nome as cliente_nome FROM knowledge_templates t LEFT JOIN clientes c ON t.cliente_id = c.id WHERE t.id = %s", (new_id,))
             new_template = cur.fetchone()
             return jsonify(new_template), 201
@@ -76,7 +74,6 @@ def delete_template(template_id):
     try:
         conn = get_db_connection()
         with conn.cursor() as cur:
-            # Exclui os cards associados primeiro para evitar erro de chave estrangeira
             cur.execute("DELETE FROM knowledge_cards WHERE template_id = %s", (template_id,))
             cur.execute("DELETE FROM knowledge_templates WHERE id = %s", (template_id,))
             conn.commit()
