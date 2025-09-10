@@ -1,9 +1,8 @@
 # /my_app/__init__.py
 
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
 from .db import get_db_connection
-from flask import jsonify # Certifique-se de que jsonify está importado
 
 # Importação de todos os blueprints
 from .routes.config_routes import config_bp
@@ -15,10 +14,13 @@ from .routes.agente_routes import agente_bp
 def create_app():
     app = Flask(__name__)
 
-    # Configuração do CORS
-    CORS(app, resources={r"/api/*": {"origins": "https://www.fenix.dev.br"}})
+    # Configuração do CORS (CORRIGIDA)
+    CORS(app, resources={
+        r"/api/*": {"origins": "https://www.fenix.dev.br"},
+        r"/health": {"origins": "https://www.fenix.dev.br"}  # Adiciona permissão para a rota /health
+    })
 
-    # ROTA DE SAÚDE PRINCIPAL (agora no sítio correto)
+    # ROTA DE SAÚDE PRINCIPAL
     @app.route('/health')
     def health_check():
         db_status = "ok"
