@@ -263,3 +263,7 @@ def delete_perfil(perfil_id):
             return jsonify({"status": "success"}) if cur.rowcount > 0 else (jsonify({"error": "Perfil não encontrado"}), 404)
     finally:
         if conn: conn.close()
+
+@config_bp.route('/health', methods=['GET'])
+def health_check():
+    return jsonify(status="ok", module="Configurações"), 200

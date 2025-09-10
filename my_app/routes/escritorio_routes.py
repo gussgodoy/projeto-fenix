@@ -114,3 +114,7 @@ def delete_cliente(cliente_id):
         return jsonify({"error": str(e)}), 500
     finally:
         if conn: conn.close()
+
+@escritorio_bp.route('/health', methods=['GET'])
+def health_check():
+    return jsonify(status="ok", module="Escritório"), 200

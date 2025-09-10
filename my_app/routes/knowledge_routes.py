@@ -195,5 +195,3 @@ knowledge_bp = Blueprint('knowledge_bp', __name__, url_prefix='/api/knowledge')
 @knowledge_bp.route('/health', methods=['GET'])
 def health_check():
     return jsonify(status="ok", module="Conhecimento"), 200
-
-# ... (o resto do seu código para este módulo continua aqui)
