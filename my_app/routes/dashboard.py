@@ -1,109 +1,107 @@
-# /projeto-fenix/my_app/routes/dashboard.py
-
-from flask import Blueprint, request, jsonify
-from my_app.db import get_db_connection
-
-# Todas as rotas definidas aqui terão o prefixo '/api/dashboard'
-dashboard_bp = Blueprint('dashboard', __name__, url_prefix='/api/dashboard')
-
-@dashboard_bp.route('/conversations', methods=['GET'])
-def get_dashboard_conversations():
-    cliente_id = request.args.get('cliente_id')
-    if not cliente_id:
-        return jsonify({"error": "cliente_id é obrigatório"}), 400
-
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            # --- CORREÇÃO DEFINITIVA: 'c.timestamp' alterado para 'c.data_inicio' ---
-            sql = """
-            SELECT
-                c.id, c.conversa_bloqueada, ct.nome as customer_name,
-                (SELECT conteudo FROM messages WHERE conversation_id = c.id ORDER BY timestamp DESC LIMIT 1) as last_message_snippet
-            FROM conversations c
-            INNER JOIN agentes a ON c.agente_id = a.id
-            LEFT JOIN contacts ct ON c.contact_id = ct.id
-            WHERE a.cliente_id = %s
-            ORDER BY c.data_inicio DESC;
-            """
-            cursor.execute(sql, (cliente_id,))
-            conversations = cursor.fetchall()
-        return jsonify(conversations), 200
-    except Exception as e:
-        return jsonify({"error": f"Erro fatal na query de conversas: {str(e)}"}), 500
-    finally:
-        if conn: conn.close()
-
-@dashboard_bp.route('/conversations/<int:convo_id>/messages', methods=['GET'])
-def get_dashboard_messages(convo_id):
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT id FROM conversations WHERE id = %s", (convo_id,))
-            if not cursor.fetchone():
-                return jsonify([]), 200
-            sql = "SELECT * FROM messages WHERE conversation_id = %s ORDER BY timestamp ASC;"
-            cursor.execute(sql, (convo_id,))
-            messages = cursor.fetchall()
-        return jsonify(messages), 200
-    except Exception as e:
-        return jsonify({"error": f"Erro fatal na query de mensagens: {str(e)}"}), 500
-    finally:
-        if conn: conn.close()
-
-@dashboard_bp.route('/conversations/<int:convo_id>/toggle-lock', methods=['PUT'])
-def toggle_conversation_lock(convo_id):
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT id FROM conversations WHERE id = %s", (convo_id,))
-            if not cursor.fetchone():
-                return jsonify({"error": "Conversa não encontrada"}), 404
-            sql_update = "UPDATE conversations SET conversa_bloqueada = NOT conversa_bloqueada WHERE id = %s;"
-            cursor.execute(sql_update, (convo_id,))
-        conn.commit()
-        with conn.cursor() as cursor:
-            sql_select = "SELECT c.id, c.conversa_bloqueada, ct.nome as customer_name FROM conversations c LEFT JOIN contacts ct ON c.contact_id = ct.id WHERE c.id = %s;"
-            cursor.execute(sql_select, (convo_id,))
-            updated_conversation = cursor.fetchone()
-        return jsonify(updated_conversation), 200
-    except Exception as e:
-        conn.rollback()
-        return jsonify({"error": f"Erro ao alternar bloqueio: {str(e)}"}), 500
-    finally:
-        if conn: conn.close()
-
-@dashboard_bp.route('/conversations/<int:convo_id>/send-message', methods=['POST'])
-def send_human_message(convo_id):
-    data = request.get_json()
-    if not data or 'content' not in data:
-        return jsonify({"error": "O conteúdo da mensagem é obrigatório"}), 400
-    message_content = data['content']
-    human_user_id = 1
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT id FROM conversations WHERE id = %s", (convo_id,))
-            if not cursor.fetchone():
-                return jsonify({"error": "Conversa não encontrada"}), 404
-            sql = "INSERT INTO messages (conversation_id, conteudo, sender_type, user_id) VALUES (%s, %s, 'human', %s);"
-            cursor.execute(sql, (convo_id, message_content, human_user_id))
-            new_message_id = cursor.lastrowid
-        conn.commit()
-        return jsonify({"id": new_message_id, "message": "Mensagem enviada com sucesso"}), 201
-    except Exception as e:
-        conn.rollback()
-        return jsonify({"error": f"Erro ao enviar mensagem: {str(e)}"}), 500
-    finally:
-        if conn: conn.close()
-
 # /my_app/routes/dashboard.py
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
+from ..db import get_db_connection
+from datetime import datetime, timedelta
 
-dashboard_bp = Blueprint('dashboard_bp', __name__, url_prefix='/api/dashboard')
+dashboard_bp = Blueprint('dashboard', __name__, url_prefix='/api/dashboard')
 
+# Função auxiliar para obter datas
+def get_date_range(period):
+    today = datetime.now()
+    if period == 'hoje':
+        start_date = today.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = start_date + timedelta(days=1)
+    elif period == 'ontem':
+        start_date = (today - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = start_date + timedelta(days=1)
+    elif period == 'semana':
+        start_of_week = today - timedelta(days=today.weekday())
+        start_date = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = start_date + timedelta(days=7)
+    elif period == 'mes':
+        start_date = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        # Lógica para encontrar o fim do mês
+        next_month = start_date.replace(day=28) + timedelta(days=4)
+        end_date = next_month - timedelta(days=next_month.day)
+    else: # Default para 'hoje' se o período for inválido
+        start_date = today.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = start_date + timedelta(days=1)
+    return start_date.strftime('%Y-%m-%d %H:%M:%S'), end_date.strftime('%Y-%m-%d %H:%M:%S')
+
+# Rota para obter todos os dados do dashboard
+@dashboard_bp.route('/data', methods=['GET'])
+def get_dashboard_data():
+    period = request.args.get('period', 'hoje')
+    start_date_str, end_date_str = get_date_range(period)
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # 1. Total de Conversas
+            cur.execute("""
+                SELECT COUNT(*) as total FROM conversations 
+                WHERE timestamp BETWEEN %s AND %s
+            """, (start_date_str, end_date_str))
+            total_conversas = cur.fetchone()['total']
+
+            # 2. Total de Mensagens
+            cur.execute("""
+                SELECT COUNT(*) as total FROM messages m
+                JOIN conversations c ON m.conversation_id = c.id
+                WHERE c.timestamp BETWEEN %s AND %s
+            """, (start_date_str, end_date_str))
+            total_mensagens = cur.fetchone()['total']
+
+            # 3. Conversas por Agente
+            cur.execute("""
+                SELECT a.nome, COUNT(c.id) as total_conversas
+                FROM conversations c
+                JOIN agentes a ON c.agente_id = a.id
+                WHERE c.timestamp BETWEEN %s AND %s
+                GROUP BY a.nome
+                ORDER BY total_conversas DESC
+            """, (start_date_str, end_date_str))
+            conversas_por_agente = cur.fetchall()
+
+            # 4. Gráfico de Atendimentos (exemplo: por hora)
+            cur.execute("""
+                SELECT HOUR(timestamp) as hora, COUNT(*) as total
+                FROM conversations
+                WHERE timestamp BETWEEN %s AND %s
+                GROUP BY hora
+                ORDER BY hora
+            """, (start_date_str, end_date_str))
+            atendimentos_por_hora = cur.fetchall()
+            
+            # 5. Avaliações
+            cur.execute("""
+                SELECT avaliacao, COUNT(*) as total
+                FROM conversations
+                WHERE avaliacao IS NOT NULL AND timestamp BETWEEN %s AND %s
+                GROUP BY avaliacao
+            """, (start_date_str, end_date_str))
+            avaliacoes = cur.fetchall()
+
+            return jsonify({
+                "kpis": {
+                    "total_conversas": total_conversas,
+                    "total_mensagens": total_mensagens,
+                    "avaliacoes": {item['avaliacao']: item['total'] for item in avaliacoes}
+                },
+                "conversas_por_agente": conversas_por_agente,
+                "atendimentos_por_hora": atendimentos_por_hora
+            })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn:
+            conn.close()
+
+# Rota de Saúde para o Módulo Dashboard (CORRIGIDA)
 @dashboard_bp.route('/health', methods=['GET'])
 def health_check():
-
-return jsonify(status="ok", module="Dashboard"), 200       
+    # Esta função agora está corretamente indentada
+    return jsonify(status="ok", module="Dashboard"), 200
