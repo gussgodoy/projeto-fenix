@@ -1,5 +1,3 @@
-# /my_app/__init__.py
-
 from flask import Flask, jsonify
 from flask_cors import CORS
 from .db import get_db_connection
@@ -17,10 +15,10 @@ def create_app():
     # Configuração do CORS (CORRIGIDA)
     CORS(app, resources={
         r"/api/*": {"origins": "https://www.fenix.dev.br"},
-        r"/health": {"origins": "https://www.fenix.dev.br"}  # Adiciona permissão para a rota /health
+        r"/health": {"origins": "https://www.fenix.dev.br"}
     })
 
-    # ROTA DE SAÚDE PRINCIPAL
+    # ROTA DE SAÚDE PRINCIPAL (agora no sítio correto)
     @app.route('/health')
     def health_check():
         db_status = "ok"
@@ -28,7 +26,7 @@ def create_app():
             conn = get_db_connection()
             conn.close()
         except Exception as e:
-            db_status = f"error: {e}"
+            db_status = f"error: {str(e)}"
         
         return jsonify(
             server_status="OK",
