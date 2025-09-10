@@ -105,5 +105,5 @@ dashboard_bp = Blueprint('dashboard_bp', __name__, url_prefix='/api/dashboard')
 
 @dashboard_bp.route('/health', methods=['GET'])
 def health_check():
-    # Este módulo pode ter uma verificação mais complexa no futuro
-    return jsonify(status="ok", module="Dashboard"), 200       
+
+return jsonify(status="ok", module="Dashboard"), 200       
