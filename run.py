@@ -1,9 +1,13 @@
-# /projeto-fenix/run.py
+# run.py
 
+import os
+from dotenv import load_dotenv
 from my_app import create_app
+
+load_dotenv()
 
 app = create_app()
 
 if __name__ == '__main__':
-    # O debug=True faz o servidor reiniciar automaticamente a cada mudança no código.
-    app.run(debug=True, port=5000, host='0.0.0.0')
+    port = int(os.environ.get('PORT', 5000))
+    app.run(debug=False, host='0.0.0.0', port=port)

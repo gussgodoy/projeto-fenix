@@ -1,180 +1,31 @@
-# my_app/routes/knowledge_routes.py
+# my_app/__init__.py
 
-from flask import Blueprint, request, jsonify
-from my_app.db import get_db_connection
+from flask import Flask
+import os
+from dotenv import load_dotenv
 
-knowledge_bp = Blueprint('knowledge', __name__)
+def create_app():
+    load_dotenv()
+    app = Flask(__name__)
 
-# Rota para obter todos os templates com contagem de cards
-@knowledge_bp.route('/templates', methods=['GET'])
-def get_templates():
-    conn = get_db_connection()
-    try:
-        with conn.cursor(dictionary=True) as cur:
-            # CORREÇÃO: A query agora usa a tabela correta 'knowledge_templates' (aliased como 't').
-            # O erro original foi causado por uma consulta a uma tabela inexistente ou incorreta.
-            query = """
-                SELECT
-                    t.id,
-                    t.nome,
-                    t.descricao,
-                    t.cliente_id,
-                    c.nome_fantasia AS cliente_nome,
-                    (SELECT COUNT(*) FROM knowledge_cards WHERE template_id = t.id AND status_id = 1) AS card_count
-                FROM
-                    knowledge_templates t
-                LEFT JOIN
-                    clientes c ON t.cliente_id = c.id
-                WHERE
-                    t.status_id = 1
-                ORDER BY
-                    t.nome;
-            """
-            cur.execute(query)
-            templates = cur.fetchall()
-            return jsonify(templates)
-    finally:
-        if conn:
-            conn.close()
+    # Configurações do App
+    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'uma_chave_secreta_padrao_para_desenvolvimento')
 
-# Rota para obter os cards de um template específico
-@knowledge_bp.route('/cards/<int:template_id>', methods=['GET'])
-def get_cards_for_template(template_id):
-    conn = get_db_connection()
-    try:
-        with conn.cursor(dictionary=True) as cur:
-            cur.execute("""
-                SELECT id, titulo, conteudo
-                FROM knowledge_cards
-                WHERE template_id = %s AND status_id = 1
-                ORDER BY titulo;
-            """, (template_id,))
-            cards = cur.fetchall()
-            return jsonify(cards)
-    finally:
-        if conn:
-            conn.close()
+    # Importar e Registrar Blueprints das Rotas
+    from .routes.status_routes import status_bp
+    from .routes.key_routes import key_bp
+    from .routes.provider_routes import provider_bp
+    from .routes.client_routes import client_bp
+    from .routes.knowledge_routes import knowledge_bp
+    from .routes.agent_routes import agent_bp
+    from .routes.dashboard import dashboard_bp
 
-# Rota para criar um novo template
-@knowledge_bp.route('/templates', methods=['POST'])
-def create_template():
-    data = request.get_json()
-    nome = data.get('nome')
-    descricao = data.get('descricao')
-    cliente_id = data.get('cliente_id') if data.get('cliente_id') else None
+    app.register_blueprint(status_bp, url_prefix='/api/status')
+    app.register_blueprint(key_bp, url_prefix='/api/chaves')
+    app.register_blueprint(provider_bp, url_prefix='/api/providers')
+    app.register_blueprint(client_bp, url_prefix='/api/clientes')
+    app.register_blueprint(knowledge_bp, url_prefix='/api/knowledge')
+    app.register_blueprint(agent_bp, url_prefix='/api/agentes')
+    app.register_blueprint(dashboard_bp, url_prefix='/api/dashboard')
 
-    if not nome:
-        return jsonify({"message": "O nome do template é obrigatório."}), 400
-
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO knowledge_templates (nome, descricao, cliente_id) VALUES (%s, %s, %s)",
-                (nome, descricao, cliente_id)
-            )
-            conn.commit()
-            return jsonify({"status": "success", "id": cur.lastrowid}), 201
-    finally:
-        if conn:
-            conn.close()
-
-# Rota para atualizar um template existente
-@knowledge_bp.route('/templates/<int:id>', methods=['PUT'])
-def update_template(id):
-    data = request.get_json()
-    nome = data.get('nome')
-    descricao = data.get('descricao')
-    cliente_id = data.get('cliente_id') if data.get('cliente_id') else None
-
-    if not nome:
-        return jsonify({"message": "O nome do template é obrigatório."}), 400
-
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE knowledge_templates SET nome = %s, descricao = %s, cliente_id = %s WHERE id = %s",
-                (nome, descricao, cliente_id, id)
-            )
-            conn.commit()
-            return jsonify({"status": "success"}) if cur.rowcount > 0 else jsonify({"message": "Template não encontrado."}), 404
-    finally:
-        if conn:
-            conn.close()
-
-# Rota para deletar um template (soft delete)
-@knowledge_bp.route('/templates/<int:id>', methods=['DELETE'])
-def delete_template(id):
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            # Soft delete nos cards associados
-            cur.execute("UPDATE knowledge_cards SET status_id = 99 WHERE template_id = %s", (id,))
-            # Soft delete no template
-            cur.execute("UPDATE knowledge_templates SET status_id = 99 WHERE id = %s", (id,))
-            conn.commit()
-            return jsonify({"status": "success"}) if cur.rowcount > 0 else jsonify({"message": "Template não encontrado."}), 404
-    finally:
-        if conn:
-            conn.close()
-
-# Rota para criar um novo card
-@knowledge_bp.route('/cards', methods=['POST'])
-def create_card():
-    data = request.get_json()
-    template_id = data.get('template_id')
-    titulo = data.get('titulo')
-    conteudo = data.get('conteudo')
-
-    if not all([template_id, titulo, conteudo]):
-        return jsonify({"message": "template_id, titulo e conteudo são obrigatórios."}), 400
-
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO knowledge_cards (template_id, titulo, conteudo) VALUES (%s, %s, %s)",
-                (template_id, titulo, conteudo)
-            )
-            conn.commit()
-            return jsonify({"status": "success", "id": cur.lastrowid}), 201
-    finally:
-        if conn:
-            conn.close()
-
-# Rota para atualizar um card existente
-@knowledge_bp.route('/cards/<int:id>', methods=['PUT'])
-def update_card(id):
-    data = request.get_json()
-    titulo = data.get('titulo')
-    conteudo = data.get('conteudo')
-
-    if not all([titulo, conteudo]):
-        return jsonify({"message": "titulo e conteudo são obrigatórios."}), 400
-
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE knowledge_cards SET titulo = %s, conteudo = %s WHERE id = %s",
-                (titulo, conteudo, id)
-            )
-            conn.commit()
-            return jsonify({"status": "success"}) if cur.rowcount > 0 else jsonify({"message": "Card não encontrado."}), 404
-    finally:
-        if conn:
-            conn.close()
-
-# Rota para deletar um card (soft delete)
-@knowledge_bp.route('/cards/<int:id>', methods=['DELETE'])
-def delete_card(id):
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("UPDATE knowledge_cards SET status_id = 99 WHERE id = %s", (id,))
-            conn.commit()
-            return jsonify({"status": "success"}) if cur.rowcount > 0 else jsonify({"message": "Card não encontrado."}), 404
-    finally:
-        if conn:
-            conn.close()
+    return app
