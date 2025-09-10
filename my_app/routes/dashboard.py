@@ -1,63 +1,76 @@
-from flask import Blueprint, jsonify, request
-from ..db import get_db_connection
-from datetime import datetime, timedelta
+# my_app/routes/dashboard.py
 
-dashboard_bp = Blueprint('dashboard', __name__, url_prefix='/api/dashboard')
+from flask import Blueprint, request, jsonify
+from my_app.db import get_db_connection
 
-def get_date_range(period):
-    today = datetime.now()
-    if period == 'hoje':
-        start_date = today.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_date = start_date + timedelta(days=1)
-    elif period == 'ontem':
-        start_date = (today - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-        end_date = start_date + timedelta(days=1)
-    elif period == 'semana':
-        start_of_week = today - timedelta(days=today.weekday())
-        start_date = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_date = start_date + timedelta(days=7)
-    elif period == 'mes':
-        start_date = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        next_month = start_date.replace(day=28) + timedelta(days=4)
-        end_date = next_month - timedelta(days=next_month.day)
-    else:
-        start_date = today.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_date = start_date + timedelta(days=1)
-    return start_date.strftime('%Y-%m-%d %H:%M:%S'), end_date.strftime('%Y-%m-%d %H:%M:%S')
+dashboard_bp = Blueprint('dashboard', __name__)
 
-@dashboard_bp.route('/data', methods=['GET'])
-def get_dashboard_data():
-    period = request.args.get('period', 'hoje')
-    start_date_str, end_date_str = get_date_range(period)
-    conn = None
+@dashboard_bp.route('/conversations', methods=['GET'])
+def get_dashboard_conversations():
+    cliente_id = request.args.get('cliente_id')
+    if not cliente_id:
+        return jsonify({"error": "cliente_id é obrigatório"}), 400
+    
+    conn = get_db_connection()
     try:
-        conn = get_db_connection()
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) as total FROM conversations WHERE timestamp BETWEEN %s AND %s", (start_date_str, end_date_str))
-            total_conversas = cur.fetchone()['total']
-            cur.execute("SELECT COUNT(*) as total FROM messages m JOIN conversations c ON m.conversation_id = c.id WHERE c.timestamp BETWEEN %s AND %s", (start_date_str, end_date_str))
-            total_mensagens = cur.fetchone()['total']
-            cur.execute("SELECT a.nome, COUNT(c.id) as total_conversas FROM conversations c JOIN agentes a ON c.agente_id = a.id WHERE c.timestamp BETWEEN %s AND %s GROUP BY a.nome ORDER BY total_conversas DESC", (start_date_str, end_date_str))
-            conversas_por_agente = cur.fetchall()
-            cur.execute("SELECT HOUR(timestamp) as hora, COUNT(*) as total FROM conversations WHERE timestamp BETWEEN %s AND %s GROUP BY hora ORDER BY hora", (start_date_str, end_date_str))
-            atendimentos_por_hora = cur.fetchall()
-            cur.execute("SELECT avaliacao, COUNT(*) as total FROM conversations WHERE avaliacao IS NOT NULL AND timestamp BETWEEN %s AND %s GROUP BY avaliacao", (start_date_str, end_date_str))
-            avaliacoes = cur.fetchall()
-            return jsonify({
-                "kpis": {
-                    "total_conversas": total_conversas,
-                    "total_mensagens": total_mensagens,
-                    "avaliacoes": {item['avaliacao']: item['total'] for item in avaliacoes}
-                },
-                "conversas_por_agente": conversas_por_agente,
-                "atendimentos_por_hora": atendimentos_por_hora
-            })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        with conn.cursor() as cursor:
+            sql = """
+            SELECT c.id, c.conversa_bloqueada, ct.name as customer_name,
+                   (SELECT content FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message_snippet
+            FROM conversations c
+            INNER JOIN agentes a ON c.agente_id = a.id
+            LEFT JOIN contacts ct ON c.contact_id = ct.id
+            WHERE a.cliente_id = %s
+            ORDER BY c.updated_at DESC;
+            """
+            cursor.execute(sql, (cliente_id,))
+            return jsonify(cursor.fetchall()), 200
     finally:
-        if conn:
-            conn.close()
+        if conn: conn.close()
 
-@dashboard_bp.route('/health', methods=['GET'])
-def health_check():
-    return jsonify(status="ok", module="Dashboard"), 200
+@dashboard_bp.route('/conversations/<int:convo_id>/messages', methods=['GET'])
+def get_dashboard_messages(convo_id):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            sql = "SELECT * FROM messages WHERE conversation_id = %s ORDER BY created_at ASC;"
+            cursor.execute(sql, (convo_id,))
+            return jsonify(cursor.fetchall()), 200
+    finally:
+        if conn: conn.close()
+
+@dashboard_bp.route('/conversations/<int:convo_id>/toggle-lock', methods=['PUT'])
+def toggle_conversation_lock(convo_id):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            sql_update = "UPDATE conversations SET conversa_bloqueada = NOT conversa_bloqueada WHERE id = %s;"
+            cursor.execute(sql_update, (convo_id,))
+        conn.commit()
+        return jsonify({"status": "success"}), 200
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": f"Erro ao alternar bloqueio: {e}"}), 500
+    finally:
+        if conn: conn.close()
+
+@dashboard_bp.route('/conversations/<int:convo_id>/send-message', methods=['POST'])
+def send_human_message(convo_id):
+    data = request.get_json()
+    content = data.get('content')
+    if not content:
+        return jsonify({"error": "O conteúdo da mensagem é obrigatório"}), 400
+    
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            sql = "INSERT INTO messages (conversation_id, content, sender_type, user_id) VALUES (%s, %s, 'human', 1);"
+            cursor.execute(sql, (convo_id, content))
+            new_message_id = cursor.lastrowid
+        conn.commit()
+        return jsonify({"id": new_message_id, "message": "Mensagem enviada"}), 201
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": f"Erro ao enviar mensagem: {e}"}), 500
+    finally:
+        if conn: conn.close()
